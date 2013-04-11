@@ -51,7 +51,7 @@ Example.prototype = {
     this.consoleOutput = [];
     var globs = this.runner.evalInit();
     try {
-      this.result = this.runner.evaller(this.expr, globs);
+      this.result = this.runner.evaller(this.expr, globs, this.filename);
     } catch (e) {
       if (e['doctest.abort']) {
         return;
@@ -817,7 +817,7 @@ Runner.prototype = {
     }
   },
 
-  evaller: function (expr, context) {
+  evaller: function (expr, context, filename) {
     var e = eval;
     var result;
     if (context) {
@@ -830,7 +830,7 @@ Runner.prototype = {
         var sandbox = vm.Script.createContext();
         extend(sandbox, context);
         sandbox.global = sandbox.root = sandbox.GLOBAL = sandbox;
-        sandbox.__filename = __filename;
+        sandbox.__filename = typeof filename != "undefined" ? filename : __filename;
         sandbox.__dirname = require('path').dirname(sandbox.__filename);
 
         var Module = require('module');
@@ -961,8 +961,10 @@ Runner.prototype = {
   examples: null,
   Example: Example,
   exampleOptions: null,
-  makeExample: function (text, expected) {
-    return new this.Example(this, text, expected, this.exampleOptions);
+  makeExample: function (text, expected, filename) {
+    var options = {filename: filename};
+    extend(options, this.exampleOptions);
+    return new this.Example(this, text, expected, options);
   },
   matcher: null,
   Matcher: Matcher,
@@ -1283,7 +1285,7 @@ HTMLParser.prototype = {
 
 };
 
-var TextParser = exports.TextParser = function (runner, text) {
+var TextParser = exports.TextParser = function (runner, text, filename) {
   if (typeof esprima == "undefined") {
     if (typeof require != "undefined") {
       esprima = require("./esprima/esprima.js");
@@ -1293,6 +1295,7 @@ var TextParser = exports.TextParser = function (runner, text) {
   }
   this.runner = runner;
   this.text = text;
+  this.filename = filename;
 };
 
 TextParser.fromFile = function (runner, filename) {
@@ -1304,7 +1307,7 @@ TextParser.fromFile = function (runner, filename) {
   }
   var fs = require('fs');
   var text = fs.readFileSync(filename, 'UTF-8');
-  return new TextParser(runner, text);
+  return new TextParser(runner, text, filename);
 };
 
 TextParser.prototype = {
@@ -1325,13 +1328,13 @@ TextParser.prototype = {
       var end = comment.range[1];
       var example = this.text.substr(pos, start-pos);
       var output = comment.value.replace(/^\s*=>\s*/, '');
-      var ex = this.runner.makeExample(example, output);
+      var ex = this.runner.makeExample(example, output, this.filename);
       this.runner.examples.push(ex);
       pos = end;
     }
     var last = this.text.substr(pos, this.text.length-pos);
     if (strip(last)) {
-      this.runner.examples.push(this.runner.makeExample(last, ''));
+      this.runner.examples.push(this.runner.makeExample(last, '', this.filename));
     }
   }
 };
