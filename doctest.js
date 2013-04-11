@@ -824,35 +824,35 @@ Runner.prototype = {
       if (typeof global != "undefined") {
         var vm = require('vm');
 
-        // https://github.com/jashkenas/coffee-script/issues/1035#issuecomment-1509076
-        // https://github.com/jashkenas/coffee-script/pull/1487
-        // https://github.com/jashkenas/coffee-script/blob/master/src/coffee-script.coffee
+        // Prepare sandbox to evaluate `expr` in. Mostly follows CoffeeScript
+        // REPL [implementation](http://git.io/coffee-script-eval).
         var sandbox = vm.Script.createContext();
         extend(sandbox, context);
         sandbox.global = sandbox.root = sandbox.GLOBAL = sandbox;
         sandbox.__filename = typeof filename != "undefined" ? filename : __filename;
         sandbox.__dirname = require('path').dirname(sandbox.__filename);
+        sandbox.module = module;
+        sandbox.require = require;
 
-        var Module = require('module');
-        sandbox.module = _module = new Module(false || 'eval');
-        sandbox.require = _require = function(path) {
-          return Module._load(path, _module, true);
-        };
-        _module.filename = sandbox.__filename;
-        var props = Object.getOwnPropertyNames(require);
-        for (i = 0; i < props.length; i++) {
-          r = props[i];
-          if (r !== 'paths') {
-            _require[r] = require[r];
-          }
+        // Set `module.filename` to script file name and evaluate the script.
+        // Now, if the script executes `require('./something')`, it will look
+        // up `'./something'` relative to script path.
+        //
+        // We restore `module.filename` afterwards, because `module` object
+        // is reused. The other approach is to create a new `module` instance.
+        // CoffeeScript REPL [works][1] [this way][2]. Unfortunately it
+        // [uses private Node API][3] to do it.
+        //
+        // [1]: http://git.io/coffee-script-eval-comment
+        // [2]: https://github.com/jashkenas/coffee-script/pull/1487
+        // [3]: http://git.io/coffee-script-eval
+        var prevfilename = module.filename;
+        module.filename = sandbox.__filename;
+        try {
+          vm.runInContext(expr, sandbox);
+        } finally {
+            module.filename = prevfilename;
         }
-
-        _require.paths = _module.paths = Module._nodeModulePaths(process.cwd());
-        _require.resolve = function(request) {
-          return Module._resolveFilename(request, _module);
-        };
-
-        vm.runInContext(expr, sandbox);
 
       } else {
         with (context) {
