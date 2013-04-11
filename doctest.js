@@ -822,9 +822,38 @@ Runner.prototype = {
     var result;
     if (context) {
       if (typeof global != "undefined") {
-        extend(global, context);
         var vm = require('vm');
-        vm.runInThisContext(expr);
+
+        // https://github.com/jashkenas/coffee-script/issues/1035#issuecomment-1509076
+        // https://github.com/jashkenas/coffee-script/pull/1487
+        // https://github.com/jashkenas/coffee-script/blob/master/src/coffee-script.coffee
+        var sandbox = vm.Script.createContext();
+        extend(sandbox, context);
+        sandbox.global = sandbox.root = sandbox.GLOBAL = sandbox;
+        sandbox.__filename = __filename;
+        sandbox.__dirname = require('path').dirname(sandbox.__filename);
+
+        var Module = require('module');
+        sandbox.module = _module = new Module(false || 'eval');
+        sandbox.require = _require = function(path) {
+          return Module._load(path, _module, true);
+        };
+        _module.filename = sandbox.__filename;
+        var props = Object.getOwnPropertyNames(require);
+        for (i = 0; i < props.length; i++) {
+          r = props[i];
+          if (r !== 'paths') {
+            _require[r] = require[r];
+          }
+        }
+
+        _require.paths = _module.paths = Module._nodeModulePaths(process.cwd());
+        _require.resolve = function(request) {
+          return Module._resolveFilename(request, _module);
+        };
+
+        vm.runInContext(expr, sandbox);
+
       } else {
         with (context) {
           result = eval(expr);
