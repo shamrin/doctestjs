@@ -664,7 +664,9 @@ Runner.prototype = {
   },
 
   evalInit: function () {
-    var self = this;
+    if (typeof this.globs != "undefined") {
+      return this.globs;
+    }
     this.logGrouped = false;
     this._abortCalled = false;
     var globs = {
@@ -695,7 +697,9 @@ Runner.prototype = {
           }
         }
       }
-      return globs;
+      var context = require('vm').Script.createContext();
+      extend(context, globs);
+      return context;
     } else {
       extend(console, consoleOverwrites);
       window.onerror = this.windowOnerror;
@@ -821,18 +825,20 @@ Runner.prototype = {
     var e = eval;
     var result;
     if (context) {
-      if (typeof global != "undefined") {
+      if (typeof window == "undefined") {
         var vm = require('vm');
 
-        // Prepare sandbox to evaluate `expr` in. Mostly follows CoffeeScript
-        // REPL [implementation](http://git.io/coffee-script-eval).
-        var sandbox = vm.Script.createContext();
-        extend(sandbox, context);
-        sandbox.global = sandbox.root = sandbox.GLOBAL = sandbox;
-        sandbox.__filename = typeof filename != "undefined" ? filename : __filename;
-        sandbox.__dirname = require('path').dirname(sandbox.__filename);
-        sandbox.module = module;
-        sandbox.require = require;
+        if (! (context instanceof vm.Script.createContext().constructor)) {
+            throw "context must be created with vm.Script.createContext()";
+        }
+
+        // Prepare context to evaluate `expr` in. Mostly follows CoffeeScript
+        // [eval function](http://git.io/coffee-script-eval).
+        context.global = context.root = context.GLOBAL = context;
+        context.__filename = typeof filename != "undefined" ? filename : __filename;
+        context.__dirname = require('path').dirname(context.__filename);
+        context.module = module;
+        context.require = require;
 
         // Set `module.filename` to script file name and evaluate the script.
         // Now, if the script executes `require('./something')`, it will look
@@ -840,16 +846,16 @@ Runner.prototype = {
         //
         // We restore `module.filename` afterwards, because `module` object
         // is reused. The other approach is to create a new `module` instance.
-        // CoffeeScript REPL [works][1] [this way][2]. Unfortunately it
+        // CoffeeScript [eval][1] [works this way][2]. Unfortunately it
         // [uses private Node API][3] to do it.
         //
-        // [1]: http://git.io/coffee-script-eval-comment
+        // [1]: http://git.io/coffee-script-eval
         // [2]: https://github.com/jashkenas/coffee-script/pull/1487
-        // [3]: http://git.io/coffee-script-eval
+        // [3]: http://git.io/coffee-script-eval-comment
         var prevfilename = module.filename;
-        module.filename = sandbox.__filename;
+        module.filename = context.__filename;
         try {
-          vm.runInContext(expr, sandbox);
+          vm.runInContext(expr, context, context.__filename);
         } finally {
             module.filename = prevfilename;
         }
